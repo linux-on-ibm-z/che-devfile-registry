@@ -24,7 +24,14 @@ load_jenkins_vars
 install_deps
 set_nightly_tag
 setup_environment
-
 build_patched_base_images
 build_happy_path_image
-build_and_push
+
+check_buildx_support
+export check=$?
+if [[ $check = 0 ]]; then
+        build_and_push_using_buildx
+else
+        build_and_push
+fi
+
