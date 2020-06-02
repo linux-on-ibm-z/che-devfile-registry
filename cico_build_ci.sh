@@ -20,17 +20,15 @@ export SCRIPT_DIR
 # shellcheck source=./cico_functions.sh
 . "${SCRIPT_DIR}"/cico_functions.sh
 
+load_jenkins_vars
+install_deps
+setup_environment
+
 check_buildx_support
 export check=$?
 if [[ $check = 0 ]]; then
-        load_jenkins_vars
-        install_deps
-        setup_environment
-        build_and_push_using_buildx
+     build_and_push_using_buildx
 else
-        load_jenkins_vars
-        install_deps
-        setup_environment
-        build_and_push
+     build_and_push
 fi
 
