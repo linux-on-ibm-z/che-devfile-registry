@@ -6,7 +6,9 @@
 #
 # SPDX-License-Identifier: EPL-2.0
 #
-FROM docker.io/alpine:3.11.5 AS builder
+FROM --platform=$TARGETPLATFORM docker.io/alpine:3.11.5 AS builder
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
 RUN apk add --no-cache py-pip jq bash wget git skopeo && pip install yq
 
 # Registry, organization, and tag to use for base images in dockerfiles. Devfiles
@@ -29,7 +31,7 @@ RUN ./index.sh > /build/devfiles/index.json
 RUN ./list_referenced_images.sh devfiles > /build/devfiles/external_images.txt
 RUN chmod -R g+rwX /build/devfiles
 
-FROM docker.io/httpd:2.4.43-alpine AS registry
+FROM --platform=$TARGETPLATFORM docker.io/httpd:2.4.43-alpine AS registry
 # Allow htaccess
 RUN sed -i 's|    AllowOverride None|    AllowOverride All|' /usr/local/apache2/conf/httpd.conf && \
     sed -i 's|Listen 80|Listen 8080|' /usr/local/apache2/conf/httpd.conf && \
