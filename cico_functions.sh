@@ -38,47 +38,42 @@ function load_jenkins_vars() {
 function install_deps() {
   # We need to disable selinux for now, XXX
   /usr/sbin/setenforce 0  || true
-
   # Get all the deps in
   yum install -d1 -y yum-utils device-mapper-persistent-data lvm2
   yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
   yum install -d1 -y docker-ce \
     git
-
   service docker start
-  echo 'CICO: Dependencies installed'
   
+  #Enable qemu and binfmt support
+  docker run --rm --privileged docker/binfmt:66f9012c56a8316f9244ffd7622d7c21c1f6f28d
+  docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+  echo 'CICO: Dependencies installed'
+}
+
+function check_buildx_support() {
   export DOCKER_BUILD_KIT=1
   export DOCKER_CLI_EXPERIMENTAL=enabled
-
+  
   docker_version="$(docker --version | cut -d' ' -f3 | tr -cd '0-9.')"
   if [[ "$(version "$docker_version")" < "$(version '19.03')" ]]; then
     echo "Docker $docker_version greater than or equal to 19.03 is required."
+    exit 1
   fi
-
-  docker_experimental="$(docker version | \
-                         awk '/^ *Experimental:/ {print $2 ; exit}')"
-  if [[ "$docker_experimental" != 'true' ]]; then
-    echo "Docker experimental flag not enabled:"\
-          "Set with 'export DOCKER_CLI_EXPERIMENTAL=enabled'"
-  else
-    echo "Docker $docker_version supports buildx experimental feature."
-  fi
-
+  
   # Kernel
   kernel_version="$(uname -r)"
   if [[ "$(version "$kernel_version")" < "$(version '4.8')" ]]; then
     echo "Kernel $kernel_version too old - need >= 4.8." \
           " Install a newer kernel."
-    exit 1
   else
     echo "kernel $kernel_version has binfmt_misc fix-binary (F) support."
   fi
   
-  #Enable qemu and binfmt support
-  docker run --rm --privileged docker/binfmt:66f9012c56a8316f9244ffd7622d7c21c1f6f28d
-  docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+}
 
+function version() {
+  printf '%02d' $(echo "$1" | tr . ' ' | sed -e 's/ 0*/ /g') 2>/dev/null
 }
 
 function set_release_tag() {
@@ -104,10 +99,10 @@ function tag_push() {
 function setup_environment() {
   export TARGET=${TARGET:-"centos"}
   export REGISTRY="quay.io"
-
+  
   GIT_COMMIT_TAG=$(echo "$GIT_COMMIT" | cut -c1-"${DEVSHIFT_TAG_LEN}")
   export GIT_COMMIT_TAG
-
+  
   if [ "$TARGET" == "rhel" ]; then
     export DOCKERFILE_PATH="./build/dockerfiles/rhel.Dockerfile"
     export ORGANIZATION="openshiftio"
@@ -120,7 +115,7 @@ function setup_environment() {
     export QUAY_USERNAME=${QUAY_ECLIPSE_CHE_USERNAME}
     export QUAY_PASSWORD=${QUAY_ECLIPSE_CHE_PASSWORD}
   fi
-
+  
   if [ -n "${QUAY_USERNAME}" ] && [ -n "${QUAY_PASSWORD}" ]; then
     docker login -u "${QUAY_USERNAME}" -p "${QUAY_PASSWORD}" "${REGISTRY}"
   else
@@ -131,10 +126,8 @@ function setup_environment() {
 # Build, tag, and push devfile registry, tagged with ${TAG} and ${GIT_COMMIT_TAG}
 function build_and_push() {
   # Create a new builder instance using buildx  
-  docker buildx create --name devfile_builder
-  docker buildx use devfile_builder
+  docker buildx create --use --name builder
   docker buildx inspect --bootstrap
-  docker buildx ls
   
   # If additional tag is set (e.g. "nightly"), let's build the image accordingly and also push to 'quay.io'
   if [ -n "${TAG}" ]; then
@@ -152,17 +145,14 @@ function build_and_push() {
 # arbitrary user patch
 function build_and_push_release() {
   # Create a new builder instance using buildx  
-  docker buildx create --name devfile_builder
-  docker buildx use devfile_builder
+  docker buildx create --use --name builder
   docker buildx inspect --bootstrap
-  docker buildx ls
   
   echo "CICO: building release '${TAG}' / '${GIT_COMMIT_TAG}' version of devfile registry"
   
   echo "CICO: '${GIT_COMMIT_TAG}' version of devfile registry built"
   docker buildx build --platform=linux/amd64,linux/s390x --build-arg PATCHED_IMAGES_TAG=${TAG} -t ${REGISTRY}/${ORGANIZATION}/${IMAGE}:${GIT_COMMIT_TAG} -f ${DOCKERFILE_PATH} --target registry . --push --progress plain --no-cache
   echo "CICO: '${GIT_COMMIT_TAG}' version of devfile registry pushed to '${REGISTRY}/${ORGANIZATION}' organization"
-
   echo "CICO: release '${TAG}' version of devfile registry built"
   docker buildx build --platform=linux/amd64,linux/s390x --build-arg PATCHED_IMAGES_TAG=${TAG} -t ${REGISTRY}/${ORGANIZATION}/${IMAGE}:${TAG} -f ${DOCKERFILE_PATH} --target registry . --push --progress plain --no-cache
   echo "CICO: release '${TAG}' version of devfile registry pushed to '${REGISTRY}/${ORGANIZATION}' organization"
