@@ -21,6 +21,7 @@ export SCRIPT_DIR
 . "${SCRIPT_DIR}"/cico_functions.sh
 
 load_jenkins_vars
+check_buildx_support
 install_deps
 setup_environment
 build_and_push
